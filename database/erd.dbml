@@ -1,58 +1,15 @@
 // Customer Loan Onboarding - ERD
-// Scope: simple customer, asset, and loan application model.
-// Lifecycle is managed only for loan_application.
+// Scope: customer + loan application lifecycle only.
+// Asset is intentionally excluded in this version.
 
 Table customer {
   id uuid [pk]
-  customer_code varchar(50) [not null, unique, note: 'Business code for searching/displaying customer']
+  customer_code varchar(50) [not null, unique, note: 'Business code for lookup/display']
   full_name varchar(255) [not null]
-  phone_number varchar(20) [not null, unique]
+  phone_number varchar(20) [unique]
   identity_number varchar(20) [unique]
   date_of_birth date
-  address text
   status varchar(30) [not null, default: 'ACTIVE', note: 'ACTIVE, INACTIVE, RESTRICTED']
-  created_at timestamp [not null]
-  updated_at timestamp [not null]
-  deleted_at timestamp
-}
-
-Table asset {
-  id uuid [pk]
-  asset_code varchar(50) [not null, unique, note: 'Business code for searching/displaying asset']
-  customer_id uuid [not null]
-  license_plate varchar(20) [not null, unique]
-  vehicle_brand varchar(100) [not null]
-  vehicle_model varchar(100) [not null]
-  vehicle_version varchar(100)
-  manufacture_year int
-  status varchar(30) [not null, default: 'AVAILABLE', note: 'AVAILABLE, PLEDGED, RELEASED']
-  created_at timestamp [not null]
-  updated_at timestamp [not null]
-  deleted_at timestamp
-}
-
-Table loan_application {
-  id uuid [pk]
-  loan_application_code varchar(50) [not null, unique, note: 'Business code for searching/displaying loan application']
-  customer_id uuid [not null]
-  asset_id uuid [not null]
-  current_state_id uuid [not null]
-  requested_amount numeric(18,2) [not null]
-  loan_purpose text
-  submitted_at timestamp
-  closed_at timestamp [note: 'Set when loan application reaches terminal state']
-  created_at timestamp [not null]
-  updated_at timestamp [not null]
-  deleted_at timestamp
-
-  indexes {
-    (customer_id)
-    (asset_id)
-    (current_state_id)
-    (loan_application_code) [unique]
-  }
-
-  Note: 'Business rule: one loan application uses exactly one asset. One asset must not be used by more than one open loan application at the same time. SQL enforces this with a partial unique index on asset_id where closed_at and deleted_at are null.'
 }
 
 Table loan_application_state {
@@ -63,7 +20,6 @@ Table loan_application_state {
   is_initial boolean [not null, default: false]
   is_terminal boolean [not null, default: false]
   sort_order int [not null]
-  created_at timestamp [not null]
 }
 
 Table loan_application_state_transition {
@@ -73,53 +29,36 @@ Table loan_application_state_transition {
   action_code varchar(50) [not null]
   action_name varchar(100) [not null]
   description text
-  created_at timestamp [not null]
 
   indexes {
     (from_state_id, to_state_id, action_code) [unique]
   }
 }
 
+Table loan_application {
+  id uuid [pk]
+  loan_application_code varchar(50) [not null, unique, note: 'Business code for lookup/display, format APP-YYYY-NNNNNN']
+  customer_id uuid [not null]
+  current_state_id uuid [not null]
+  requested_amount numeric(18,2) [note: 'Nullable for early draft applications']
+  loan_purpose text
+}
+
 Table loan_application_state_history {
   id uuid [pk]
   loan_application_id uuid [not null]
-  from_state_id uuid
+  from_state_id uuid [note: 'NULL for CREATE event']
   to_state_id uuid [not null]
   action_code varchar(50) [not null]
-  changed_at timestamp [not null]
+  changed_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
   changed_by varchar(100)
   note text
-
-  indexes {
-    (loan_application_id, changed_at)
-    (from_state_id)
-    (to_state_id)
-  }
 }
 
-// Relationships
-
-// One customer can own many assets.
-Ref: customer.id < asset.customer_id
-
-// One customer can have many loan applications.
 Ref: customer.id < loan_application.customer_id
-
-// One loan application uses exactly one asset.
-// Business rule: an asset can be linked to at most one open loan application at a time.
-// DBML cannot represent the partial unique index directly, so this is documented in table note and SQL migration.
-Ref: asset.id - loan_application.asset_id
-
-// One state can be current state of many loan applications.
 Ref: loan_application_state.id < loan_application.current_state_id
-
-// Transition source and target state.
 Ref: loan_application_state.id < loan_application_state_transition.from_state_id
 Ref: loan_application_state.id < loan_application_state_transition.to_state_id
-
-// State history belongs to one loan application.
 Ref: loan_application.id < loan_application_state_history.loan_application_id
-
-// State history records from_state and to_state.
 Ref: loan_application_state.id < loan_application_state_history.from_state_id
 Ref: loan_application_state.id < loan_application_state_history.to_state_id
